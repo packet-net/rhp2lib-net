@@ -232,4 +232,41 @@ public class MessageSerializationTests
         var back = RhpDataEncoding.FromWireString(wire);
         Assert.Equal(bytes, back);
     }
+
+    [Fact]
+    public void Binary_Data_Serializes_To_Ascii_Only_Wire_Bytes()
+    {
+        // The Latin-1 binary convention only round-trips through xrouter
+        // because every non-ASCII code point leaves the serializer as a
+        // \u00XX escape, never as raw multi-byte UTF-8. That depends on
+        // RhpJson.Options using the default (escape-everything) encoder —
+        // pin it so a future Options tweak can't silently corrupt payloads.
+        var payload = new byte[256];
+        for (var i = 0; i < 256; i++) payload[i] = (byte)i;
+
+        var wire = RhpJson.Serialize(new SendMessage
+        {
+            Handle = 1,
+            Data = RhpDataEncoding.ToWireString(payload),
+        });
+
+        Assert.All(wire, b => Assert.True(b < 0x80,
+            $"non-ASCII byte 0x{b:X2} on the wire"));
+
+        var back = (SendMessage)RhpJson.Deserialize(wire);
+        Assert.Equal(payload, RhpDataEncoding.FromWireString(back.Data));
+    }
+
+    [Fact]
+    public void Unknown_Type_With_NonNumeric_Id_Still_Yields_UnknownMessage()
+    {
+        // Forward-compatible frames may shape id/seqno however they like;
+        // that must not become a parse error.
+        var wire = """{"type":"futureMessage","id":"abc","seqno":"xyz","foo":1}""";
+        var msg = RhpJson.Deserialize(Encoding.UTF8.GetBytes(wire));
+        var unk = Assert.IsType<UnknownMessage>(msg);
+        Assert.Equal("futureMessage", unk.Type);
+        Assert.Null(unk.Id);
+        Assert.Null(unk.Seqno);
+    }
 }

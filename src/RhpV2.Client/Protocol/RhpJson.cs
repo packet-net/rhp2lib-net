@@ -109,7 +109,10 @@ public sealed class UnknownMessage : RhpMessage
     {
         Type = type;
         Raw = raw;
-        if (raw["id"]?.GetValue<int>() is int id) Id = id;
-        if (raw["seqno"]?.GetValue<int>() is int seq) Seqno = seq;
+        // Unknown messages are by definition outside our schema, so don't
+        // trust id/seqno to be numeric — a throw here would turn a
+        // forward-compatible frame into a parse error.
+        if (raw["id"] is JsonValue idValue && idValue.TryGetValue(out int id)) Id = id;
+        if (raw["seqno"] is JsonValue seqValue && seqValue.TryGetValue(out int seq)) Seqno = seq;
     }
 }

@@ -5,7 +5,25 @@ feed, with a short summary per version.
 
 ## Unreleased
 
-_Nothing yet._
+### Fixed
+
+* A throwing user event handler (`Received`, `Accepted`, etc.) no longer
+  faults the read loop — previously one misbehaving subscriber tore down
+  the whole RHP connection and failed every in-flight request.
+* Undecodable frames now surface their raw text through
+  `UnknownReceived` (`UnknownMessage.Raw["raw"]`) instead of an empty
+  placeholder, so consumers can log something actionable.
+* `UnknownMessage` no longer throws on forward-compatible frames whose
+  `id`/`seqno` aren't numeric.
+
+### Added
+
+* `RhpClient.MaxSendDataLength` (default 8100): client-side guard
+  against xrouter's silent drop of `send.data` above ~8 KB (issue #7).
+  Oversized sends now throw `ArgumentException` instead of hanging the
+  awaiting caller forever. Set to `null` to disable.
+* `MockRhpServer.BroadcastRawAsync` for injecting raw / malformed frames
+  in tests.
 
 ## 0.2.2 — first NuGet.org publish
 

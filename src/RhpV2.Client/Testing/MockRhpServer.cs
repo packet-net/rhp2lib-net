@@ -95,6 +95,20 @@ public sealed class MockRhpServer : IAsyncDisposable
             await s.WriteAsync(notification, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Push a raw, pre-encoded frame payload to all live sessions.  Unlike
+    /// <see cref="BroadcastAsync"/> the bytes are framed but not serialized,
+    /// so tests can inject malformed JSON or other wire shapes the typed
+    /// API can't produce.
+    /// </summary>
+    public async Task BroadcastRawAsync(ReadOnlyMemory<byte> payload, CancellationToken ct = default)
+    {
+        MockRhpSession[] snapshot;
+        lock (_sessionsLock) snapshot = _sessions.ToArray();
+        foreach (var s in snapshot)
+            await s.WriteRawAsync(payload, ct).ConfigureAwait(false);
+    }
+
     internal int NextHandle() => Interlocked.Increment(ref _nextHandle);
     internal int NextSeqno() => Interlocked.Increment(ref _nextSeqno);
 
@@ -248,10 +262,15 @@ internal sealed class MockRhpSession : IAsyncDisposable
     public async Task WriteAsync(RhpMessage message, CancellationToken ct)
     {
         var bytes = RhpJson.Serialize(message);
+        await WriteRawAsync(bytes, ct).ConfigureAwait(false);
+    }
+
+    public async Task WriteRawAsync(ReadOnlyMemory<byte> payload, CancellationToken ct)
+    {
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await RhpFraming.WriteFrameAsync(_stream, bytes, ct).ConfigureAwait(false);
+            await RhpFraming.WriteFrameAsync(_stream, payload, ct).ConfigureAwait(false);
         }
         finally
         {

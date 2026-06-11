@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Sockets;
+using System.Text;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -31,6 +33,17 @@ public sealed class RhpClient : IAsyncDisposable, IDisposable
     private Task? _readerTask;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private int _disposed;
+
+    /// <summary>
+    /// Client-side ceiling on <c>send.data</c> length, in characters (one
+    /// character per payload byte for Latin-1 wire strings).  Real xrouter
+    /// silently drops <c>send</c> requests whose data exceeds ~8 KB — no
+    /// <c>sendReply</c>, no error, so the await never completes (the cliff
+    /// sits between 8100 and 8200 bytes; see the protocol docs and
+    /// rhp2lib-net#7).  Oversized sends throw <see cref="ArgumentException"/>
+    /// instead of hanging.  Set to <c>null</c> to disable the guard.
+    /// </summary>
+    public int? MaxSendDataLength { get; set; } = 8100;
 
     /// <summary>Raised when an asynchronous RECV message arrives.</summary>
     public event EventHandler<RhpReceivedEventArgs>? Received;
@@ -206,13 +219,26 @@ public sealed class RhpClient : IAsyncDisposable, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    UnknownReceived?.Invoke(this, new RhpUnknownEventArgs(
-                        new UnknownMessage("<parse-error>", new System.Text.Json.Nodes.JsonObject())));
                     System.Diagnostics.Debug.WriteLine($"RHP parse error: {ex.Message}");
-                    continue;
+                    // Keep the undecodable frame's text so UnknownReceived
+                    // subscribers can log something actionable.
+                    msg = new UnknownMessage("<parse-error>", new JsonObject
+                    {
+                        ["raw"] = Encoding.UTF8.GetString(frame),
+                    });
                 }
 
-                Dispatch(msg);
+                try
+                {
+                    Dispatch(msg);
+                }
+                catch (Exception ex)
+                {
+                    // A throwing subscriber must not fault the read loop —
+                    // that would fail every in-flight request and drop the
+                    // connection because one event handler misbehaved.
+                    System.Diagnostics.Debug.WriteLine($"RHP event handler threw: {ex}");
+                }
             }
         }
         catch (OperationCanceledException) { /* expected */ }
@@ -302,7 +328,15 @@ public sealed class RhpClient : IAsyncDisposable, IDisposable
         => RequestAsync<ConnectReplyMessage>(new ConnectMessage { Handle = handle, Remote = remote }, ct);
 
     public Task<SendReplyMessage> SendOnHandleAsync(int handle, string data, CancellationToken ct = default)
-        => RequestAsync<SendReplyMessage>(new SendMessage { Handle = handle, Data = data }, ct);
+    {
+        if (MaxSendDataLength is int max && data.Length > max)
+            throw new ArgumentException(
+                $"send.data of {data.Length} characters exceeds MaxSendDataLength ({max}); " +
+                "xrouter silently drops oversized sends and the reply never arrives. " +
+                "Fragment the payload, or set MaxSendDataLength to null to send anyway.",
+                nameof(data));
+        return RequestAsync<SendReplyMessage>(new SendMessage { Handle = handle, Data = data }, ct);
+    }
 
     public Task<SendReplyMessage> SendOnHandleAsync(int handle, ReadOnlySpan<byte> data, CancellationToken ct = default)
         => SendOnHandleAsync(handle, RhpDataEncoding.ToWireString(data), ct);

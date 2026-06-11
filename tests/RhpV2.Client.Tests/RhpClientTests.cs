@@ -303,6 +303,99 @@ public class RhpClientTests
     }
 
     [Fact]
+    public async Task Throwing_Event_Handler_Does_Not_Kill_The_Connection()
+    {
+        await using var server = new MockRhpServer();
+        server.Start();
+        await using var client = await RhpClient.ConnectAsync("127.0.0.1", server.Endpoint.Port);
+
+        var h = await client.OpenAsync(
+            ProtocolFamily.Ax25, SocketMode.Stream,
+            port: "1", local: "G8PZT", remote: "M0XYZ", flags: OpenFlags.Active);
+
+        var handlerRan = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        client.Received += (_, _) =>
+        {
+            handlerRan.TrySetResult(true);
+            throw new InvalidOperationException("subscriber bug");
+        };
+
+        await server.BroadcastAsync(new RecvMessage { Handle = h, Data = "boom\r" });
+        await handlerRan.Task.WaitAsync(DefaultTimeout);
+
+        // The read loop must survive the throwing subscriber: a later
+        // request on the same connection still gets its reply.
+        var reply = await client.SendOnHandleAsync(h, "still alive\r")
+            .WaitAsync(DefaultTimeout);
+        Assert.Equal(0, reply.ErrCode);
+    }
+
+    [Fact]
+    public async Task Undecodable_Frame_Surfaces_Raw_Text_And_Connection_Continues()
+    {
+        await using var server = new MockRhpServer();
+        server.Start();
+        await using var client = await RhpClient.ConnectAsync("127.0.0.1", server.Endpoint.Port);
+
+        var tcs = new TaskCompletionSource<UnknownMessage>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        client.UnknownReceived += (_, e) =>
+        {
+            if (e.Message is UnknownMessage u) tcs.TrySetResult(u);
+        };
+
+        await server.BroadcastRawAsync(System.Text.Encoding.UTF8.GetBytes("this is not json"));
+
+        var unknown = await tcs.Task.WaitAsync(DefaultTimeout);
+        Assert.Equal("<parse-error>", unknown.Type);
+        Assert.Equal("this is not json", unknown.Raw["raw"]!.GetValue<string>());
+
+        // The bad frame must not desync or fault the read loop.
+        var h = await client.OpenAsync(
+            ProtocolFamily.Ax25, SocketMode.Stream,
+            port: "1", local: "G8PZT", flags: OpenFlags.Passive);
+        Assert.True(h > 0);
+    }
+
+    [Fact]
+    public async Task Send_Above_MaxSendDataLength_Throws_Instead_Of_Hanging()
+    {
+        await using var server = new MockRhpServer();
+        server.Start();
+        await using var client = await RhpClient.ConnectAsync("127.0.0.1", server.Endpoint.Port);
+
+        var h = await client.OpenAsync(
+            ProtocolFamily.Ax25, SocketMode.Stream,
+            port: "1", local: "G8PZT", remote: "M0XYZ", flags: OpenFlags.Active);
+
+        // Default guard sits at the bottom of the observed xrouter cliff.
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            async () => await client.SendOnHandleAsync(h, new string('X', 8101)));
+        Assert.Contains("MaxSendDataLength", ex.Message);
+
+        // Nothing should have hit the wire for the rejected send.
+        Assert.DoesNotContain(server.ReceivedFrames, m => m is SendMessage);
+    }
+
+    [Fact]
+    public async Task Send_Limit_Is_Configurable_And_Can_Be_Disabled()
+    {
+        await using var server = new MockRhpServer();
+        server.Start();
+        await using var client = await RhpClient.ConnectAsync("127.0.0.1", server.Endpoint.Port);
+        client.MaxSendDataLength = null;
+
+        var h = await client.OpenAsync(
+            ProtocolFamily.Ax25, SocketMode.Stream,
+            port: "1", local: "G8PZT", remote: "M0XYZ", flags: OpenFlags.Active);
+
+        var reply = await client.SendOnHandleAsync(h, new string('X', 8101))
+            .WaitAsync(DefaultTimeout);
+        Assert.Equal(0, reply.ErrCode);
+    }
+
+    [Fact]
     public async Task Pending_Requests_Fail_When_Connection_Drops()
     {
         var server = new MockRhpServer { SuppressReplies = true };
