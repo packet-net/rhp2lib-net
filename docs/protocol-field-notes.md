@@ -134,6 +134,15 @@ few lines in the server, is fully backwards compatible, and is the
 prerequisite for fixing everything else without requiring every client
 and node on the network to upgrade at the same moment.
 
+*Postscript:* this proposal now has a live answer.  pdn — the second
+server-side implementation introduced before observation 13 — answers
+`hello` with `errCode: 0` and exactly the fields sketched above
+(`proto`, `impl`, `pfams`, `maxData`, `enc`), while xrouter's
+unknown-type fallback keeps answering `helloReply` / `errCode: 2`.  A
+client probing today gets a capability list from one server and a
+clean "assume baseline v2" from the other — the backwards-compatibility
+story above, demonstrated rather than predicted.
+
 ### 5. Binary payloads are underspecified
 
 The spec says control characters in `data` must be JSON-escaped, but
@@ -282,6 +291,81 @@ appendix listing well-known conventions (`SWITCH`, port `"0"`) so
 implementations can interoperate with nodes without reverse-engineering
 them.
 
+Observations 13–15 arrived later, and from a different angle.  By
+mid-2026 a *second* server-side implementation of RHPv2 existed — pdn,
+a packet node from the same stable as this library — and wire-diffing
+it against the pinned xrouter container
+(`ghcr.io/packethacking/xrouter`, image label 505c) and against
+[RHPTEST](protocol.md#intended-behaviour-per-rhptest), the protocol
+author's own test harness, surfaced a class of issue the first pass
+couldn't see: places where the protocol's two de-facto authorities —
+the author's harness and the author's shipping binary — disagree with
+*each other*.
+
+### 13. A second `listen` is an error in RHPTEST but Ok on the wire
+
+RHPTEST says a listener socket rejects everything except `accept` and
+`close` with error 16 — explicitly including a second `listen` on the
+same socket (the rule is recorded in the
+[primer](protocol.md#intended-behaviour-per-rhptest)).  The live
+container observably does something else: a second `listen` on an
+already-listening socket answers `errCode: 0` / `"Ok"`, idempotently,
+with no double registration and no other visible effect.
+
+RHPTEST v1 was tested against XRouter v505d; the container is labelled
+505c, one build earlier.  So either the behaviour changed between 505c
+and 505d, or RHPTEST documents intent the binary doesn't deliver — and
+from outside there's no way to tell which.  For an implementer this is
+a genuinely new situation: everywhere else on this page, when paper
+and wire disagreed, the wire was the arbiter; here the tie is between
+two artefacts from the same author.  pdn currently matches the
+observed wire (idempotent Ok) and will move to the intended semantics
+the moment they're confirmed.
+
+**Suggestion:** a one-line ruling from the author settles the intent;
+a 505d container would settle the empirics — the packethacking
+containerisation can take a 505d binary as soon as one is available.
+
+### 14. `send` on a listener: 17 on the wire, 16 in RHPTEST
+
+The same class of conflict, one message over.  RHPTEST's
+listener-rejects-everything rule has `send` on a listening socket
+returning 16 ("Operation not supported"); the live 505c container
+answers 17 ("Not connected").
+
+The two codes tell an application different stories.  17 says "this
+socket could carry data but isn't connected yet" — reasonable for a
+stream mid-handshake, misleading for a listener, which will never be
+connected.  pdn sided with RHPTEST's 16, on the reasoning that a
+listener is not a not-yet-connected stream — but that's a judgement
+call, flagged here for confirmation rather than asserted.
+
+**Suggestion:** the ruling asked for in observation 13 could cover
+this too — ideally one normative sentence on listener-socket
+semantics, taking in `send`, `sendto`, `connect` and re-`listen`
+together.
+
+### 15. Two listeners can claim one callsign, and nobody says who wins
+
+A second socket — on the same RHP connection or a different one — can
+`listen` on a callsign another socket has already claimed, and the
+live wire answers `errCode: 0` / `"Ok"`.  Nothing in the spec or in
+RHPTEST then defines which listener receives the next inbound
+connect; accept routing between the two registrations is undefined,
+and neither client can detect that it has entered the ambiguous
+state.
+
+Unlike observations 13 and 14, this doesn't read like an intent
+question at all — it looks defect-shaped.  Happily the spec already
+owns the natural fix: `errCode: 9` ("Duplicate socket") is sitting in
+the published table and reads as though it was minted for exactly
+this case.  A deterministic refusal is strictly more useful than an
+Ok with undefined routing, and it's what pdn does.
+
+**Suggestion:** a normative ruling — `errCode: 9` on the second
+`listen` (the natural pick), or, if coexisting listeners are actually
+intended, defined semantics for who gets the next `accept`.
+
 ## A hypothetical v2.1 (backwards compatible)
 
 Everything here can ship without breaking a single deployed client:
@@ -297,6 +381,7 @@ Everything here can ship without breaking a single deployed client:
 | 7 | Handle ownership enforcement across RHP connections | 7 |
 | 8 | Failed `auth` fails the request, not the connection | 8 |
 | 9 | Document the published errata (casing, `port` types, TRACE fields, `errCode: 17`) as normative | — |
+| 10 | One normative ruling on listener sockets: re-`listen`, `send`-on-listener, duplicate claims | 13, 14, 15 |
 
 Item 9 deserves a sentence: this library's
 [integration suite](https://github.com/M0LTE/rhp2lib-net/tree/main/tests/RhpV2.Client.IntegrationTests)
