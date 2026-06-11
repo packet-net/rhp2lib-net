@@ -5,6 +5,17 @@ feed, with a short summary per version.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.3.0 — client robustness
+
+Released 2026-06-11.
+
+One behaviour change worth knowing about before upgrading: sends larger
+than 8100 characters now throw immediately (see `MaxSendDataLength`
+below) instead of hanging forever against real xrouter. Everything else
+is defensive hardening and test surface.
+
 ### Fixed
 
 * A throwing user event handler (`Received`, `Accepted`, etc.) no longer
