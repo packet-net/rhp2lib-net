@@ -171,6 +171,10 @@ it as `RhpErrorCode.NotConnected`.
 
 ## Spec quirks the library tolerates
 
+This is the raw list of spec-vs-reality deltas the library papers over.
+For the design consequences — and some ideas for a future protocol
+revision — see the [protocol field notes](protocol-field-notes.md).
+
 * **All** replies use `errCode`/`errText` (capital C/T) on the wire.
   PWP-0222 / PWP-0245 only mentions this as a quirk of `AUTHREPLY`, but
   integration testing against the real xrouter

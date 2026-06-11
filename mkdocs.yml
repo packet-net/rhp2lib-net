@@ -92,6 +92,7 @@ nav:
   - Home: index.md
   - Getting started: getting-started.md
   - Protocol primer: protocol.md
+  - Protocol field notes: protocol-field-notes.md
   - Library:
       - Overview: library/overview.md
       - Connecting & framing: library/transport.md
