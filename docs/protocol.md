@@ -230,32 +230,46 @@ revision — see the [protocol field notes](protocol-field-notes.md).
   sits between 8100 and 8200 bytes.  Below that, behaviour is normal;
   above, callers that `await` `sendReply` will hang.  Fragment
   client-side if you need larger payloads.
+* **An alphabetic SSID suffix wedges stream connects silently.**
+  `bind` happily accepts e.g. `G9DUM-S`, and `connect` from it
+  returns `"Ok"` — but the link never comes up: no `status`, no
+  error, while xrouter retries SABMs in the background (which can
+  exhaust resources and surface as "No memory" on *later* unrelated
+  requests).  AX.25 SSIDs are numeric 0–15; stick to them.
 
 ## Intended behaviour per RHPTEST
 
 `rhptest.c` is the protocol author's own test harness (Paula Dowie
 G8PZT, GPL, shared on the OARC Discord `rhp-testing` thread in May
 2026; v1 tested against XRouter v505d).  Its assertions and comments
-document *intent* that the white papers don't.  The library hasn't yet
-independently verified all of these against the containerised xrouter,
-so they're listed separately from the pinned quirks above:
+document *intent* that the white papers don't.  Items marked
+*(verified)* have since been confirmed by this library's integration
+suite against the containerised xrouter; the rest are listed on
+RHPTEST's authority:
 
-* **`listen` on a RAW socket sets the trace flags** — it's the
-  BSD-path equivalent of `open`'s trace bits, not an error.  (On
-  STREAM listeners `flags` means what the spec says; on DGRAM,
-  `listen` returns error 16 as we've pinned above.)
+* **`listen` on a RAW socket sets the trace flags** *(verified — RAW
+  binds are port-only; supplying an address returns 16, then `listen`
+  with trace bits makes raw frames flow)* — it's the BSD-path
+  equivalent of `open`'s trace bits, not an error.  (On STREAM
+  listeners `flags` means what the spec says; on DGRAM, `listen`
+  returns error 16 as we've pinned above.)
 * **`send.data` is mandatory even when empty.**  Omitting the field
-  is a protocol violation (error 12); `"data": ""` is legal and sends
-  a zero-length datagram (useful for UDP keepalives/hole-punching).
+  is a protocol violation (error 12) *(verified)*; `"data": ""` is
+  legal and sends a zero-length datagram (useful for UDP
+  keepalives/hole-punching).  **Caveat:** that zero-length claim is
+  UDP-specific — on AX.25 DGRAM the containerised xrouter rejects an
+  empty payload with error 1 ("Unspecified"), which the integration
+  suite pins.
 * **"Not connected" is mode-inconsistent by design**: `send` on an
   unconnected STREAM socket returns 17, but on an unconnected INET
   DGRAM socket the same condition returns 7.  Error 17 is clearly
   intentional, just missing from the published table.
 * **`port` `"0"` (or omitted) means "all ports"** for DGRAM and RAW
   binds; NetRom streams ignore `port` entirely.
-* **`seqno` starts at 0** — the first notification after an active
-  open is `status` with `seqno: 0`, and the first `recv` carries
-  `seqno: 1`.  RHPTEST asserts both values.
+* **`seqno` starts at 0** *(verified on a fresh connection to a busy
+  xrouter — implying per-connection numbering)* — the first
+  notification after an active open is `status` with `seqno: 0`, and
+  the first `recv` carries `seqno: 1`.  RHPTEST asserts both values.
 * **Notifications may precede the reply they relate to** — trace
   `recv` frames can arrive before the `sendReply`, and `status` /
   `recv` can arrive before the `connectReply`.  In the author's
