@@ -125,7 +125,8 @@ answer `errCode: 0` plus capability fields:
 
 **Suggestion:** an optional `hello`/`helloReply` exchange.  It costs a
 few lines in the server, is fully backwards compatible, and is the
-prerequisite for fixing everything else without a flag day.
+prerequisite for fixing everything else without requiring every client
+and node on the network to upgrade at the same moment.
 
 ### 5. Binary payloads are underspecified
 
