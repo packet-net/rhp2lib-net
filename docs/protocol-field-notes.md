@@ -101,6 +101,12 @@ the protocol hard to *evolve*: any behavioural fix risks breaking
 deployed clients, because there's no way for either side to detect the
 other's vintage.
 
+This matters more now that RHP is no longer a one-server protocol:
+besides xrouter there's BPQ's server-side implementation (deliberately
+partial — enough to support WhatsPac), WhatsPac as a client, and the
+Samoyed soundmodem's implementation in progress.  A client today can't
+even discover *which subset* it's talking to.
+
 There is, happily, an accident of the current implementation that makes
 this retrofittable: xrouter answers an unknown `type` by appending
 `Reply` to it and setting `errCode: 2`.  So a hypothetical
@@ -253,6 +259,28 @@ unlike the RF side — encryption and real credentials are legal):
   nonce, client returns a hash) would cost little and avoid replayable
   credentials on the wire, and TLS on the TCP listener is always an
   option for internet-exposed nodes.
+
+### 12. `port` and special addresses live outside the spec
+
+The `port` field is, in practice, an opaque server-defined identifier:
+on xrouter and BPQ it's a radio port number, but a single-interface
+packet engine (a soundmodem, say) has nothing natural to put there, and
+the spec doesn't say what a server should do with a null or omitted
+`port`.  In xrouter, `port` `"0"` (or omitting it) means "all ports"
+for datagram and raw binds, while NetRom streams don't use it at all —
+none of which is written down.  There's also at least one magic
+address: a `remote` of `SWITCH` connects to a node's command
+interpreter.  That's a node convention rather than part of RHP (it has
+no meaning on a pure packet engine, and BPQ ties its null-`port`
+handling to it), which is exactly why it belongs in the spec as a
+*non-normative* note — an implementer can't currently learn it exists
+without reading other people's source.
+
+**Suggestion:** define `port` as an opaque, server-defined string;
+specify null/omitted-`port` behaviour per mode; and add a non-normative
+appendix listing well-known conventions (`SWITCH`, port `"0"`) so
+implementations can interoperate with nodes without reverse-engineering
+them.
 
 ## A hypothetical v2.1 (backwards compatible)
 

@@ -231,6 +231,56 @@ revision — see the [protocol field notes](protocol-field-notes.md).
   above, callers that `await` `sendReply` will hang.  Fragment
   client-side if you need larger payloads.
 
+## Intended behaviour per RHPTEST
+
+`rhptest.c` is the protocol author's own test harness (Paula Dowie
+G8PZT, GPL, shared on the OARC Discord `rhp-testing` thread in May
+2026; v1 tested against XRouter v505d).  Its assertions and comments
+document *intent* that the white papers don't.  The library hasn't yet
+independently verified all of these against the containerised xrouter,
+so they're listed separately from the pinned quirks above:
+
+* **`listen` on a RAW socket sets the trace flags** — it's the
+  BSD-path equivalent of `open`'s trace bits, not an error.  (On
+  STREAM listeners `flags` means what the spec says; on DGRAM,
+  `listen` returns error 16 as we've pinned above.)
+* **`send.data` is mandatory even when empty.**  Omitting the field
+  is a protocol violation (error 12); `"data": ""` is legal and sends
+  a zero-length datagram (useful for UDP keepalives/hole-punching).
+* **"Not connected" is mode-inconsistent by design**: `send` on an
+  unconnected STREAM socket returns 17, but on an unconnected INET
+  DGRAM socket the same condition returns 7.  Error 17 is clearly
+  intentional, just missing from the published table.
+* **`port` `"0"` (or omitted) means "all ports"** for DGRAM and RAW
+  binds; NetRom streams ignore `port` entirely.
+* **`seqno` starts at 0** — the first notification after an active
+  open is `status` with `seqno: 0`, and the first `recv` carries
+  `seqno: 1`.  RHPTEST asserts both values.
+* **Notifications may precede the reply they relate to** — trace
+  `recv` frames can arrive before the `sendReply`, and `status` /
+  `recv` can arrive before the `connectReply`.  In the author's
+  words: "REAL clients must be prepared to receive STATUS and RECV
+  messages asynchronously, independently of sequenced replies."
+  (The library's event model handles this; see
+  [Events & lifecycle](library/events.md).)
+* **`close` with a missing `handle` returns 12** ("Bad parameter"),
+  not 3 — 3 is for handles that are well-formed but unknown.
+* **`sendto` on a connected STREAM socket behaves exactly like
+  `send`** — the destination address is ignored, error 0.
+* **Listener sockets reject everything but `accept`/`close`**:
+  `send`, `sendto`, `connect`, and a second `listen` all return 16.
+* **Some requirements are xrouter's, not RHP's.**  RHPTEST is
+  explicit, e.g.: "In XRouter's RHP, at least a local address must be
+  supplied in an open() call. This is NOT a requirement of the RHP
+  protocol, it's just the way XRouter works."  Other servers may be
+  more permissive — another reason capability discovery would help
+  (see the [field notes](protocol-field-notes.md)).
+* **NetRom addressing niceties**: a bare `local` user callsign is
+  completed with the node's NODECALL on the wire; supplying a full
+  `user@node` source address lets a socket act as an independent L4
+  entity, hosted apart from the node's own identity.  Aliases aren't
+  routable as `remote` targets (error 15 — they're not unique).
+
 ## Lifecycle examples
 
 ### Outgoing AX.25 keyboard session
