@@ -35,13 +35,19 @@ public sealed class RhpClient : IAsyncDisposable, IDisposable
     private int _disposed;
 
     /// <summary>
-    /// Client-side ceiling on <c>send.data</c> length, in characters (one
-    /// character per payload byte for Latin-1 wire strings).  Real xrouter
-    /// silently drops <c>send</c> requests whose data exceeds ~8 KB — no
-    /// <c>sendReply</c>, no error, so the await never completes (the cliff
-    /// sits between 8100 and 8200 bytes; see the protocol docs and
-    /// rhp2lib-net#7).  Oversized sends throw <see cref="ArgumentException"/>
-    /// instead of hanging.  Set to <c>null</c> to disable the guard.
+    /// Maximum <c>send.data</c> length, in characters (one character per payload byte for Latin-1
+    /// wire strings), carried in a single <c>send</c> request. A larger buffer passed to
+    /// <see cref="SendOnHandleAsync(int,string,CancellationToken)"/> is split into this many
+    /// characters per request and sent in order — the engine writes each into the same connected
+    /// stream, so the peer sees one continuous byte stream and (for AX.25) the link segments it into
+    /// N1/paclen I-frames regardless. Fragmenting here is therefore an engine-link concern, not an
+    /// on-air one: the chunk size does not change what goes over the radio.
+    /// <para>The default 8100 is the safe ceiling for real xrouter, which silently drops a single
+    /// <c>send</c> whose data exceeds ~8 KB — no <c>sendReply</c>, no error, the await would never
+    /// complete (the cliff sits between 8100 and 8200 bytes; see the protocol docs and rhp2lib-net#7).
+    /// A pdn engine honours larger sends (rhp2-server deviation D1), but 8100 is a safe default for
+    /// any engine and costs nothing on air. Set to <c>null</c> to send each buffer in one request
+    /// (only when the engine is known to accept it and it fits the 16-bit frame length).</para>
     /// </summary>
     public int? MaxSendDataLength { get; set; } = 8100;
 
@@ -340,15 +346,25 @@ public sealed class RhpClient : IAsyncDisposable, IDisposable
     public Task ConnectAsync(int handle, string remote, CancellationToken ct = default)
         => RequestAsync<ConnectReplyMessage>(new ConnectMessage { Handle = handle, Remote = remote }, ct);
 
-    public Task<SendReplyMessage> SendOnHandleAsync(int handle, string data, CancellationToken ct = default)
+    public async Task<SendReplyMessage> SendOnHandleAsync(int handle, string data, CancellationToken ct = default)
     {
-        if (MaxSendDataLength is int max && data.Length > max)
-            throw new ArgumentException(
-                $"send.data of {data.Length} characters exceeds MaxSendDataLength ({max}); " +
-                "xrouter silently drops oversized sends and the reply never arrives. " +
-                "Fragment the payload, or set MaxSendDataLength to null to send anyway.",
-                nameof(data));
-        return RequestAsync<SendReplyMessage>(new SendMessage { Handle = handle, Data = data }, ct);
+        // Fits in one request (or fragmentation disabled) — send it as-is.
+        if (MaxSendDataLength is not int max || max <= 0 || data.Length <= max)
+            return await RequestAsync<SendReplyMessage>(new SendMessage { Handle = handle, Data = data }, ct).ConfigureAwait(false);
+
+        // Too big for one request: split into <= max-character chunks and send them in order. The
+        // engine writes each chunk into the same connected stream, so the peer reassembles one
+        // continuous byte stream (and an AX.25 link segments it to N1/paclen I-frames either way —
+        // chunking is an engine-link detail, not an on-air one). A chunk that errors throws via
+        // RequestAsync, stopping the send. The last chunk's reply is returned.
+        SendReplyMessage reply = null!;
+        for (int offset = 0; offset < data.Length; offset += max)
+        {
+            string chunk = data.Substring(offset, Math.Min(max, data.Length - offset));
+            reply = await RequestAsync<SendReplyMessage>(new SendMessage { Handle = handle, Data = chunk }, ct).ConfigureAwait(false);
+        }
+
+        return reply;
     }
 
     public Task<SendReplyMessage> SendOnHandleAsync(int handle, ReadOnlySpan<byte> data, CancellationToken ct = default)

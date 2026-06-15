@@ -425,7 +425,7 @@ public class RhpClientTests
     }
 
     [Fact]
-    public async Task Send_Above_MaxSendDataLength_Throws_Instead_Of_Hanging()
+    public async Task Send_Above_MaxSendDataLength_IsFragmentedIntoMultipleSends()
     {
         await using var server = new MockRhpServer();
         server.Start();
@@ -435,17 +435,21 @@ public class RhpClientTests
             ProtocolFamily.Ax25, SocketMode.Stream,
             port: "1", local: "G8PZT", remote: "M0XYZ", flags: OpenFlags.Active);
 
-        // Default guard sits at the bottom of the observed xrouter cliff.
-        var ex = await Assert.ThrowsAsync<ArgumentException>(
-            async () => await client.SendOnHandleAsync(h, new string('X', 8101)));
-        Assert.Contains("MaxSendDataLength", ex.Message);
+        // 8101 chars with the default 8100 cap → the buffer is fragmented into two send requests
+        // (8100 + 1) and sent in order, rather than throwing. Splitting is an engine-link concern,
+        // not on-air: the peer reassembles one continuous stream.
+        var reply = await client.SendOnHandleAsync(h, new string('X', 8101)).WaitAsync(DefaultTimeout);
+        Assert.Equal(0, reply.ErrCode);
 
-        // Nothing should have hit the wire for the rejected send.
-        Assert.DoesNotContain(server.ReceivedFrames, m => m is SendMessage);
+        var sends = server.ReceivedFrames.OfType<SendMessage>().ToList();
+        Assert.Equal(2, sends.Count);
+        Assert.Equal(8100, sends[0].Data!.Length);
+        Assert.Equal(1, sends[1].Data!.Length);
+        Assert.Equal(new string('X', 8101), string.Concat(sends.Select(s => s.Data)));
     }
 
     [Fact]
-    public async Task Send_Limit_Is_Configurable_And_Can_Be_Disabled()
+    public async Task Send_Fragmentation_CanBeDisabled_ToSendInOneRequest()
     {
         await using var server = new MockRhpServer();
         server.Start();
@@ -459,6 +463,9 @@ public class RhpClientTests
         var reply = await client.SendOnHandleAsync(h, new string('X', 8101))
             .WaitAsync(DefaultTimeout);
         Assert.Equal(0, reply.ErrCode);
+
+        var send = Assert.Single(server.ReceivedFrames.OfType<SendMessage>());
+        Assert.Equal(8101, send.Data!.Length);   // one request, no split
     }
 
     [Fact]
