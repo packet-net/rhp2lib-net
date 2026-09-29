@@ -5,6 +5,14 @@ feed, with a short summary per version.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.4.0 - the open reply, and pdn's "crossed"
+
+Released 2026-09-29.
+
+Additive and source-compatible: nothing existing changes behaviour.
+
 ### Added
 
 * `OpenReplyMessage.Crossed` (`bool?`): pdn's `"crossed": true`
