@@ -76,6 +76,28 @@ public class MessageSerializationTests
     }
 
     [Fact]
+    public void OpenReply_Reads_Pdn_Crossed_Extension()
+    {
+        // pdn's extension E1: present, and only ever true, when the open
+        // crossed the peer's own call.
+        var wire = """{"type":"openReply","id":7,"handle":104,"errCode":0,"errText":"Ok","crossed":true}""";
+        var msg = (OpenReplyMessage)RhpJson.Deserialize(Encoding.UTF8.GetBytes(wire));
+        Assert.Equal(104, msg.Handle);
+        Assert.True(msg.Crossed);
+    }
+
+    [Fact]
+    public void OpenReply_Without_Crossed_Reads_As_Unknown_And_Writes_No_Key()
+    {
+        // XRouter's reply (and pdn's for a call that did not cross) has no
+        // key: null, not false.  Written back, the key stays absent.
+        var wire = """{"type":"openReply","id":7,"handle":104,"errCode":0,"errText":"Ok"}""";
+        var msg = (OpenReplyMessage)RhpJson.Deserialize(Encoding.UTF8.GetBytes(wire));
+        Assert.Null(msg.Crossed);
+        Assert.False(JsonDocument.Parse(Json(msg)).RootElement.TryGetProperty("crossed", out _));
+    }
+
+    [Fact]
     public void AuthReply_Deserializes_With_CapitalC_ErrCode()
     {
         // Per the spec AUTHREPLY uses "errCode"/"errText" with capital C.

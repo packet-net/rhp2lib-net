@@ -295,6 +295,19 @@ RHPTEST's authority:
   entity, hosted apart from the node's own identity.  Aliases aren't
   routable as `remote` targets (error 15 — they're not unique).
 
+## Server extensions
+
+Keys a server adds that neither PWP-0222 nor XRouter has.  The library
+reads the ones below and ignores any others; each is optional, and its
+absence means "unknown".
+
+| Server | Message | Key | Library | Meaning |
+|--------|---------|-----|---------|---------|
+| pdn (packet.net, its extension E1) | successful `openReply` | `"crossed": true` | `OpenReplyMessage.Crossed` | The node's call crossed the peer's own call to us: the peer's SABM or SABME to our local callsign arrived while the node was dialling it, or the link was already up. Only ever sent as `true`. |
+
+`OpenAsync` returns only the handle; use `OpenWithReplyAsync` to read
+the whole reply.
+
 ## Lifecycle examples
 
 ### Outgoing AX.25 keyboard session

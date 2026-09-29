@@ -103,6 +103,17 @@ public sealed class OpenReplyMessage : RhpMessage
 
     [JsonPropertyName("errText")]
     public string? ErrText { get; set; }
+
+    /// <summary>
+    /// pdn's extension E1: <c>true</c> when a successful stream open crossed
+    /// the peer's own call to us (the peer's SABM or SABME to our local
+    /// callsign arrived while the node was dialling it, or the link was
+    /// already up).  pdn sends the key only when it is true; XRouter never
+    /// sends it.  <c>null</c> therefore means "unknown", not "did not cross".
+    /// See packet.net's <c>docs/rhp2-server.md</c>, Extensions.
+    /// </summary>
+    [JsonPropertyName("crossed")]
+    public bool? Crossed { get; set; }
 }
 
 // ---------------------------------------------------------------------------

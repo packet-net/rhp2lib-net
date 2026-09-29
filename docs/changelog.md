@@ -5,6 +5,29 @@ feed, with a short summary per version.
 
 ## Unreleased
 
+### Added
+
+* `OpenReplyMessage.Crossed` (`bool?`): pdn's `"crossed": true`
+  extension on a successful `openReply`, set when the node's call
+  crossed the peer's own call to us.  `null` means the server said
+  nothing (always so with XRouter).
+* `RhpClient.OpenWithReplyAsync`: `OpenAsync` with the same
+  parameters, returning the whole `OpenReplyMessage` instead of just
+  the handle, so callers can read `Crossed`.  `OpenAsync` is
+  unchanged.
+
+## 0.3.1
+
+Released 2026-06-15.
+
+### Changed
+
+* `SendOnHandleAsync` splits a send larger than `MaxSendDataLength`
+  into chunks of at most that many characters and sends them in order,
+  instead of throwing.  `MaxSendDataLength` keeps its 8100 default,
+  now as the chunk size; set it to `null` to send each buffer in one
+  request.
+
 ### Fixed (alignment with RHPTEST-documented behaviour)
 
 * `BindAsync` / `BindMessage.Local` can now omit the local address —
