@@ -47,6 +47,31 @@ public abstract class RhpMessage
 * `Seqno` is set by the server on async notifications (RECV, ACCEPT,
   STATUS, server-initiated CLOSE) and is round-tripped on read.
 
+## Server extensions on replies
+
+`OpenReplyMessage.Crossed` (`bool?`) carries pdn's `"crossed": true`
+extension: the open succeeded, and the node's call crossed the peer's
+own call to us.  It is `null` whenever the server says nothing, which is
+always the case with XRouter, so treat `null` as "unknown" rather than
+"did not cross".  A `"crossed": false` on the wire reads as `null` too,
+so only `true` ever means crossed.  `RhpClient.OpenAsync` returns just the handle; call
+`OpenWithReplyAsync` (same parameters) to get the reply itself:
+
+```csharp
+var reply = await rhp.OpenWithReplyAsync(
+    ProtocolFamily.Ax25, SocketMode.Stream,
+    port: "1", local: "G8PZT", remote: "GB7PZT",
+    flags: OpenFlags.Active);
+
+if (reply.Crossed == true)
+{
+    // The far end dialled us at the same moment; don't wait for its prompt.
+}
+```
+
+See [Server extensions](../protocol.md#server-extensions) in the
+protocol primer.
+
 ## Constants and enums
 
 The `RhpV2.Client.Protocol` namespace ships strongly-typed constants for

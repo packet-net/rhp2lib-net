@@ -48,6 +48,63 @@ public class RhpClientTests
     }
 
     [Fact]
+    public async Task OpenWithReplyAsync_Surfaces_Pdn_Crossed()
+    {
+        // pdn adds "crossed":true to a successful openReply when the call
+        // crossed the peer's own call to us (its extension E1).
+        await using var server = new MockRhpServer();
+        server.Handler = msg => msg switch
+        {
+            OpenMessage => new OpenReplyMessage { Handle = 104, ErrCode = 0, ErrText = "Ok", Crossed = true },
+            _ => null,
+        };
+        server.Start();
+        await using var client = await RhpClient.ConnectAsync("127.0.0.1", server.Endpoint.Port);
+
+        var reply = await client.OpenWithReplyAsync(
+            ProtocolFamily.Ax25, SocketMode.Stream,
+            port: "1", local: "G8PZT", remote: "GB7PZT", flags: OpenFlags.Active);
+
+        Assert.Equal(104, reply.Handle);
+        Assert.True(reply.Crossed);
+    }
+
+    [Fact]
+    public async Task OpenWithReplyAsync_Leaves_Crossed_Null_When_The_Server_Says_Nothing()
+    {
+        // XRouter (and the mock's default reply) never sends the key.
+        await using var server = new MockRhpServer();
+        server.Start();
+        await using var client = await RhpClient.ConnectAsync("127.0.0.1", server.Endpoint.Port);
+
+        var reply = await client.OpenWithReplyAsync(
+            ProtocolFamily.Ax25, SocketMode.Stream,
+            port: "1", local: "G8PZT", remote: "GB7PZT", flags: OpenFlags.Active);
+
+        Assert.True(reply.Handle > 0);
+        Assert.Null(reply.Crossed);
+    }
+
+    [Fact]
+    public async Task OpenWithReplyAsync_Throws_On_A_Failed_Open_Like_OpenAsync()
+    {
+        await using var server = new MockRhpServer();
+        server.Handler = msg => msg switch
+        {
+            OpenMessage => new OpenReplyMessage { ErrCode = RhpErrorCode.NoRoute, ErrText = "No Route" },
+            _ => null,
+        };
+        server.Start();
+        await using var client = await RhpClient.ConnectAsync("127.0.0.1", server.Endpoint.Port);
+
+        var ex = await Assert.ThrowsAsync<RhpServerException>(
+            async () => await client.OpenWithReplyAsync(
+                ProtocolFamily.Ax25, SocketMode.Stream,
+                port: "1", local: "G8PZT", remote: "NOROUTE", flags: OpenFlags.Active));
+        Assert.Equal(RhpErrorCode.NoRoute, ex.ErrorCode);
+    }
+
+    [Fact]
     public async Task SendOnHandle_Returns_OkReply()
     {
         await using var server = new MockRhpServer();

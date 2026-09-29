@@ -306,14 +306,30 @@ public sealed class RhpClient : IAsyncDisposable, IDisposable
         OpenFlags flags = OpenFlags.Passive,
         CancellationToken ct = default)
     {
-        var reply = await RequestAsync<OpenReplyMessage>(new OpenMessage
+        var reply = await OpenWithReplyAsync(family, mode, port, local, remote, flags, ct)
+            .ConfigureAwait(false);
+        return reply.Handle;
+    }
+
+    /// <summary>
+    /// As <see cref="OpenAsync"/>, but returns the whole <c>openReply</c>
+    /// rather than just its handle, so a caller can read what else the server
+    /// said about the open, such as pdn's
+    /// <see cref="OpenReplyMessage.Crossed"/>.  Throws
+    /// <see cref="RhpServerException"/> on a non-zero error code, exactly as
+    /// <see cref="OpenAsync"/> does.
+    /// </summary>
+    public Task<OpenReplyMessage> OpenWithReplyAsync(
+        string family, string mode,
+        string? port = null, string? local = null, string? remote = null,
+        OpenFlags flags = OpenFlags.Passive,
+        CancellationToken ct = default)
+        => RequestAsync<OpenReplyMessage>(new OpenMessage
         {
             Pfam = family, Mode = mode,
             Port = port, Local = local, Remote = remote,
             Flags = (int)flags,
-        }, ct).ConfigureAwait(false);
-        return reply.Handle;
-    }
+        }, ct);
 
     public async Task<int> SocketAsync(string family, string mode, CancellationToken ct = default)
     {
