@@ -53,7 +53,8 @@ public abstract class RhpMessage
 extension: the open succeeded, and the node's call crossed the peer's
 own call to us.  It is `null` whenever the server says nothing, which is
 always the case with XRouter, so treat `null` as "unknown" rather than
-"did not cross".  `RhpClient.OpenAsync` returns just the handle; call
+"did not cross".  A `"crossed": false` on the wire reads as `null` too,
+so only `true` ever means crossed.  `RhpClient.OpenAsync` returns just the handle; call
 `OpenWithReplyAsync` (same parameters) to get the reply itself:
 
 ```csharp

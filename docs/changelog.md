@@ -10,7 +10,8 @@ feed, with a short summary per version.
 * `OpenReplyMessage.Crossed` (`bool?`): pdn's `"crossed": true`
   extension on a successful `openReply`, set when the node's call
   crossed the peer's own call to us.  `null` means the server said
-  nothing (always so with XRouter).
+  nothing (always so with XRouter), and a `"crossed": false` reads as
+  `null` as well, so only `true` means crossed.
 * `RhpClient.OpenWithReplyAsync`: `OpenAsync` with the same
   parameters, returning the whole `OpenReplyMessage` instead of just
   the handle, so callers can read `Crossed`.  `OpenAsync` is

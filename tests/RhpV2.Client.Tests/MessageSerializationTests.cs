@@ -98,6 +98,16 @@ public class MessageSerializationTests
     }
 
     [Fact]
+    public void OpenReply_Crossed_False_Reads_As_Unknown()
+    {
+        // pdn never sends false; if anything does, only true means crossed.
+        var wire = """{"type":"openReply","id":7,"handle":104,"errCode":0,"errText":"Ok","crossed":false}""";
+        var msg = (OpenReplyMessage)RhpJson.Deserialize(Encoding.UTF8.GetBytes(wire));
+        Assert.Null(msg.Crossed);
+        Assert.False(JsonDocument.Parse(Json(msg)).RootElement.TryGetProperty("crossed", out _));
+    }
+
+    [Fact]
     public void AuthReply_Deserializes_With_CapitalC_ErrCode()
     {
         // Per the spec AUTHREPLY uses "errCode"/"errText" with capital C.
