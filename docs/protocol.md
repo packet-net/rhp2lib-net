@@ -283,6 +283,10 @@ RHPTEST's authority:
   `send`** — the destination address is ignored, error 0.
 * **Listener sockets reject everything but `accept`/`close`**:
   `send`, `sendto`, `connect`, and a second `listen` all return 16.
+  **Caveat:** the live 505c container disagrees on two of these — a
+  second `listen` answers 0 ("Ok", idempotently) and `send` answers
+  17 ("Not connected"); see field-notes
+  [observations 13–14](protocol-field-notes.md#13-a-second-listen-is-an-error-in-rhptest-but-ok-on-the-wire).
 * **Some requirements are xrouter's, not RHP's.**  RHPTEST is
   explicit, e.g.: "In XRouter's RHP, at least a local address must be
   supplied in an open() call. This is NOT a requirement of the RHP
