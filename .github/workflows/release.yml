@@ -115,6 +115,11 @@ jobs:
           cd ../..
           (cd artifacts && sha256sum "${base}."* > "${base}.sha256")
 
+      # Self-contained, so the runtime in the archive is whichever SDK built it, and a stale
+      # one ships old security fixes. Fail the release instead.
+      - name: Check the bundled .NET runtime is the latest patch
+        run: python3 scripts/check-bundled-runtime.py "${{ steps.pack.outputs.path }}"
+
       - name: Upload archive
         uses: actions/upload-artifact@v7
         with:
