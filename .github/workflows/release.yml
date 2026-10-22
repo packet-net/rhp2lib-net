@@ -70,7 +70,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
 
       - name: Restore
         run: dotnet restore src/RhpV2.Tools/RhpV2.Tools.csproj -r ${{ matrix.rid }}
@@ -115,6 +114,11 @@ jobs:
           cd ../..
           (cd artifacts && sha256sum "${base}."* > "${base}.sha256")
 
+      # Self-contained, so the runtime in the archive is whichever SDK built it, and a stale
+      # one ships old security fixes. Fail the release instead.
+      - name: Check the bundled .NET runtime is the latest patch
+        run: python3 scripts/check-bundled-runtime.py "${{ steps.pack.outputs.path }}"
+
       - name: Upload archive
         uses: actions/upload-artifact@v7
         with:
@@ -134,7 +138,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
 
       - name: Pack
         run: >
@@ -164,7 +167,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
 
       - name: Download NuGet artifact
         uses: actions/download-artifact@v8
