@@ -30,3 +30,4 @@ packages/
 ## mkdocs
 site/
 .venv/
+__pycache__/
