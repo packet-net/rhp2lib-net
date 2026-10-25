@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fails unless every release archive bundles the latest .NET 10 runtime patch.
+"""Fails if any release archive bundles a .NET 10 runtime older than the latest patch.
 
 The rhp tool is a self-contained single-file executable, so each archive carries the runtime of
 whichever SDK built it, and an operating system update never patches it. A stale SDK would ship
@@ -8,6 +8,11 @@ the program in each archive (the executable embeds its deps.json, which names th
 as runtimepack.Microsoft.NETCore.App.Runtime.<rid>/<version>) and compares it with the latest
 10.0 runtime Microsoft lists. The RhpV2.Client NuGet package is a library with no runtime in it,
 so it is not checked.
+
+A runtime newer than the latest the index lists passes: SDK workloads can reach nuget.org a few
+days before the release index lists that patch (10.0.14 on 2026-10-25, which failed another
+packet-net release), and the point is to catch a stale build machine, not one ahead of the index.
+It fails when a program bundles an older runtime, or zero or several recognisable versions.
 
 Usage: scripts/check-bundled-runtime.py <archive.tar.gz|archive.zip>...
 """
@@ -34,6 +39,10 @@ def latest_runtime():
     sys.exit(f"no .NET {CHANNEL} channel in {INDEX}")
 
 
+def version_key(version):
+    return tuple(int(part) for part in version.split("."))
+
+
 def program_bytes(archive):
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as z:
@@ -57,9 +66,13 @@ def main(archives):
         for name, data in programs:
             found = sorted({m.decode() for m in RUNTIME.findall(data)})
             print(f"{archive.name}: {name} bundles {', '.join(found) or 'nothing recognisable'}")
-            if found != [want]:
+            if len(found) != 1:
                 print(f"::error::{archive.name} bundles .NET runtime {', '.join(found) or 'unknown'}, "
-                      f"not {want}. Update the .NET 10 SDK on the machine that built it.")
+                      "not one recognisable version. Check how the program was built.")
+                bad = True
+            elif version_key(found[0]) < version_key(want):
+                print(f"::error::{archive.name} bundles .NET runtime {found[0]}, older than {want}. "
+                      "Update the .NET 10 SDK on the machine that built it.")
                 bad = True
     return 1 if bad else 0
 
