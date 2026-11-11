@@ -1,0 +1,81 @@
+name: package upgrades
+
+on:
+  schedule:
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: package-upgrades
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    name: upgrade packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: full upgrade, build and test
+        id: full
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/bump-packages.py RhpV2.slnx | tee "$RUNNER_TEMP/upgrades.txt"
+          dotnet restore RhpV2.slnx
+          dotnet build RhpV2.slnx --configuration Release --no-restore
+          dotnet test RhpV2.slnx --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
+
+      - name: security fallback, build and test
+        id: security
+        if: steps.full.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git reset --hard
+          git clean -fdx -e .dotnet
+          python3 scripts/bump-packages.py RhpV2.slnx --vulnerable-only | tee "$RUNNER_TEMP/upgrades.txt"
+          dotnet restore RhpV2.slnx
+          dotnet build RhpV2.slnx --configuration Release --no-restore
+          dotnet test RhpV2.slnx --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
+
+      - name: commit and push
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -u
+          if git diff --cached --quiet; then
+            echo "nothing to upgrade"
+            exit 0
+          fi
+          if [ "${{ steps.full.outcome }}" = "failure" ]; then
+            subject="chore(deps): security package fixes"
+          else
+            subject="chore(deps): package upgrades"
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          {
+            echo "$subject"
+            echo
+            echo "Built and tested before commit. Changed by scripts/bump-packages.py:"
+            echo
+            cat "$RUNNER_TEMP/upgrades.txt"
+          } > "$RUNNER_TEMP/commit-msg.txt"
+          git commit -q -F "$RUNNER_TEMP/commit-msg.txt"
+          git pull -q --rebase origin main
+          git push origin HEAD:main
