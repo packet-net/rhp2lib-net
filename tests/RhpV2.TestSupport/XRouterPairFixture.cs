@@ -30,7 +30,7 @@ namespace RhpV2.TestSupport;
 /// </summary>
 public sealed class XRouterPairFixture : IAsyncLifetime
 {
-    private const string Image = "ghcr.io/packethacking/xrouter";
+    private const string Image = XRouterImage.Name;
 
     // Pick a random /24 inside 10.0.0.0/8 per fixture instance — multiple
     // fixtures can run simultaneously (xunit parallelises test classes

@@ -20,7 +20,7 @@ namespace RhpV2.TestSupport;
 /// </summary>
 public sealed class XRouterFixture : IAsyncLifetime
 {
-    private const string Image = "ghcr.io/packethacking/xrouter";
+    private const string Image = XRouterImage.Name;
 
     /// <summary>
     /// Minimal loopback config — RHPPORT explicitly enabled so the
